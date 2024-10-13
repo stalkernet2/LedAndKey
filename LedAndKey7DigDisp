@@ -1,0 +1,163 @@
+#include <TM1638.h>
+
+//choose digital pins compatibles with your board
+#define STB 7 // Strobe digital pin
+#define CLK 9 // clock digital pin
+#define DIO 8 // data digital pin
+
+bool isLeftMove = false;
+bool ledIsEnable = false;
+bool shouldClear = false;
+
+const int ArrayCount = 28;
+const int SIZE_MESSAGE = 24;
+
+uint8_t InputsFromPC[SIZE_MESSAGE];
+uint8_t BeforeLoad[2];
+
+char serialChar;
+TM1638 LedAndKey(CLK,DIO,STB); // https://jetpackacademy.com/wp-content/uploads/2018/06/TM1638_cheat_sheet_download.pdf
+
+unsigned long time = 0;
+unsigned long deadTime = 0;
+
+const uint8_t text[ArrayCount] = {  0x80, 0x80, 0x80, 0x80,
+                                    0x80, 0x58, 0x4C, 0x40,
+                                    0x58, 0x4C, 0x40, 0x58, 
+                                    0x4C, 0x40, 0x58, 0x4C, 
+                                    0x40, 0x58, 0x4C, 0x40, 
+                                    0x3B, 0x4C, 0x80, 0x80, 
+                                    0x80, 0x80, 0x80, 0x80  }; // hui - 0x76, 0x3E, 0x6; train - 0x80, 0x58, 0x4C, 0x40, 0x3B, 0x4C
+
+
+
+void setup() 
+{
+  InputsFromPC[0] = 0x08;
+  LedAndKey.reset();
+  Serial.begin(9600);
+  for(int i = 1; i <= 8; i++)
+      LedAndKey.writeLed(i, false);
+}
+
+void loop()
+{
+  GetSerialInfo();
+  OnDelay();
+
+  Serial.println(InputsFromPC[0]);
+
+  //LedAndKey.displayDig(7, InputsFromPC[0]);
+
+  switch(InputsFromPC[0])
+  {
+    case 1:
+      MoveText(text);
+
+      if(!ledIsEnable)
+        break;
+
+      LedAndKey.writeLeds(0);
+      break;
+    case 4:
+      ShowSerialInputsOnDisplay();
+      ShowSerialInputsOnLed();
+      //for(int i = 7; i > 1; i--)
+      //  LedAndKey.displayDig(i, InputsFromPC[17 + i]);
+      break;
+  }
+}
+
+void yield()
+{
+  GetSerialInfo();
+}
+
+void GetSerialInfo()
+{
+  if (Serial.available() > 0)
+  {
+    Serial.readBytes(InputsFromPC, SIZE_MESSAGE);
+
+    deadTime = time + 1;
+
+    if(!shouldClear)
+      shouldClear = false;
+  }
+}
+
+void OnDelay()
+{
+  time = millis() / 1000;
+
+  if(time > deadTime)
+  { 
+    shouldClear = true;
+    InputsFromPC[0] = 1;
+  }
+}
+
+void ShowSerialInputsOnDisplay()
+{
+  for(int i = 0; i < 8; i++)
+    LedAndKey.displayDig(7 - i, InputsFromPC[i + 1]);
+}
+
+void ShowSerialInputsOnLed()
+{
+  if(!ledIsEnable)
+    ledIsEnable = true;
+
+  for(int i = 4; i >= BeforeLoad[0]; i--)
+    LedAndKey.writeLed(i, false);
+
+  for(int i = 8; i >= BeforeLoad[0]; i--)
+    LedAndKey.writeLed(i, false);
+
+  for(int i = 1; i <= InputsFromPC[9]; i++)
+    LedAndKey.writeLed(i, true);
+
+  for(int i = 5; i <= InputsFromPC[10] + 4; i++)
+    LedAndKey.writeLed(i, true);
+
+  BeforeLoad[0] = InputsFromPC[9];
+  BeforeLoad[1] = InputsFromPC[10];
+}
+
+void ShowText(uint8_t array[])
+{
+  for(int i = 0; i < 8; i++)
+  {
+    LedAndKey.displayDig(i, array[7 - i]);
+  }
+}
+
+void MoveText(uint8_t array[])
+{
+  const int displaySegments = 8;
+
+  if(shouldClear)
+  {
+      shouldClear = false;
+      LedAndKey.displayClear();
+  }
+
+  for(int i = 0; i < ArrayCount; i++)
+  {
+    for(int j = 0; j < displaySegments; j++)
+    {
+      if(isLeftMove)
+      {
+        LedAndKey.displayDig(j, array[(ArrayCount - 1) - ((i * -1) + j < 0 ? ((i * -1) + j) + ArrayCount : (i * -1) + j)]); // i + j > (displaySegments - 1) ? i + j - displaySegments : i + j
+      }
+      else
+      {
+        LedAndKey.displayDig(j, array[(ArrayCount - 1) - (i + j > (ArrayCount - 1) ? i + j - ArrayCount : i + j)]);
+      }
+    }
+    if(InputsFromPC[0] != 1)
+      return;
+      
+    delay(200);
+  }
+}
